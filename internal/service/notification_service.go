@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 
-	"github.com/muhammadFittra/notification-service/internal/domain"
+	"github.com/FiTTrA990/notification-and-messaging-service/internal/domain"
 )
 
 //go:generate mockgen -source=notification_service.go -destination=../../mocks/mock_notification_service.go -package=mocks
