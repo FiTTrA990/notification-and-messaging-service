@@ -4,7 +4,7 @@ package mocks
 import (
 	"context"
 
-	"github.com/muhammadFittra/notification-service/internal/domain"
+	"github.com/FiTTrA990/notification-and-messaging-service/internal/domain"
 )
 
 // MockMessageConsumerInterface is used as a parameter type in worker tests.
