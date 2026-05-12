@@ -8,7 +8,7 @@ import (
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
-	domain "github.com/muhammadFittra/notification-service/internal/domain"
+	domain "github.com/FiTTrA990/notification-and-messaging-service/internal/domain"
 )
 
 // MockMessageConsumer is a mock of MessageConsumer interface
