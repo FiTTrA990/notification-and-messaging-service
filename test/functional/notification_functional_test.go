@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/muhammadFittra/notification-service/internal/domain"
-	"github.com/muhammadFittra/notification-service/internal/service"
+	"github.com/FiTTrA990/notification-and-messaging-service/internal/domain"
+	"github.com/FiTTrA990/notification-and-messaging-service/internal/service"
 )
 
 // ─────────────────────────────────────────────────────────────
