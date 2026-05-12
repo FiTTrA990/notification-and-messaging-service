@@ -1,4 +1,4 @@
-module github.com/muhammadFittra/notification-service
+module github.com/FiTTrA990/notification-and-messaging-service
 
 go 1.21
 
