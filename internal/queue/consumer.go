@@ -3,7 +3,7 @@ package queue
 import (
 	"context"
 
-	"import "github.com/FiTTrA990/notification-and-messaging-service/internal/domain""
+	"github.com/FiTTrA990/notification-and-messaging-service/internal/domain"
 )
 
 //go:generate mockgen -source=consumer.go -destination=../../mocks/mock_consumer.go -package=mocks
