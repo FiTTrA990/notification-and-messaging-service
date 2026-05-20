@@ -1,0 +1,307 @@
+
+
+---
+# ─────────────────────────────────────────────
+# 1. Namespace
+# ─────────────────────────────────────────────
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: messaging
+  labels:
+    app.kubernetes.io/part-of: notification-service
+
+---
+# ─────────────────────────────────────────────
+# 2. ConfigMap  – non-sensitive configuration
+# ─────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notification-service-config
+  namespace: messaging
+  labels:
+    app: notification-service
+data:
+  PORT: "8080"
+  TZ: "Asia/Jakarta"
+
+  # PostgreSQL
+  DB_HOST: "postgres.messaging.svc.cluster.local"
+  DB_PORT: "5432"
+  DB_NAME: "notification_db"
+  DB_USER: "notif_user"
+  DB_SSL_MODE: "disable"
+
+  # RabbitMQ
+  RABBITMQ_HOST: "rabbitmq.messaging.svc.cluster.local"
+  RABBITMQ_PORT: "5672"
+  RABBITMQ_VHOST: "notification_vhost"
+  RABBITMQ_QUEUE: "notification.events"
+
+  # Kafka (opsional – aktifkan jika menggunakan Kafka)
+  # KAFKA_BROKERS: "kafka.messaging.svc.cluster.local:9092"
+  # KAFKA_TOPIC: "notification.events"
+  # KAFKA_GROUP_ID: "notification-service"
+
+  # SMTP
+  SMTP_HOST: "smtp.internal.id"
+  SMTP_PORT: "587"
+  SMTP_FROM: "no-reply@internal.id"
+
+  # FCM
+  FCM_URL: "https://fcm.googleapis.com/fcm/send"
+
+---
+# ─────────────────────────────────────────────
+# 3. Secret  – sensitive credentials
+#    Ganti nilai <base64-...> dengan:
+#      echo -n "nilai" | base64
+# ─────────────────────────────────────────────
+apiVersion: v1
+kind: Secret
+metadata:
+  name: notification-service-secret
+  namespace: messaging
+  labels:
+    app: notification-service
+type: Opaque
+data:
+  DB_PASSWORD: <base64-db-password>
+  RABBITMQ_USER: <base64-rabbitmq-user>
+  RABBITMQ_PASSWORD: <base64-rabbitmq-password>
+  SMTP_USERNAME: <base64-smtp-username>
+  SMTP_PASSWORD: <base64-smtp-password>
+  FCM_SERVER_KEY: <base64-fcm-server-key>
+
+---
+# ─────────────────────────────────────────────
+# 4. Deployment
+# ─────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-service
+  namespace: messaging
+  labels:
+    app: notification-service
+    app.kubernetes.io/name: notification-service
+    app.kubernetes.io/part-of: notification-service
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: notification-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: notification-service
+        app.kubernetes.io/name: notification-service
+      annotations:
+        # Trigger rolling restart saat ConfigMap/Secret berubah
+        checksum/config: "{{ include (print $.Template.BasePath \"/configmap.yaml\") . | sha256sum }}"
+    spec:
+      terminationGracePeriodSeconds: 30
+
+      # ── Keamanan level pod ──────────────────
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+
+      containers:
+        - name: notification-service
+          image: registry.internal.id/notification-service:latest
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+
+          # ── Environment dari ConfigMap ───────
+          envFrom:
+            - configMapRef:
+                name: notification-service-config
+
+          # ── Environment dari Secret ──────────
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: notification-service-secret
+                  key: DB_PASSWORD
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: notification-service-secret
+                  key: RABBITMQ_USER
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: notification-service-secret
+                  key: RABBITMQ_PASSWORD
+            - name: SMTP_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: notification-service-secret
+                  key: SMTP_USERNAME
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: notification-service-secret
+                  key: SMTP_PASSWORD
+            - name: FCM_SERVER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: notification-service-secret
+                  key: FCM_SERVER_KEY
+
+          # ── Health Checks ────────────────────
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          # ── Resource Limits ──────────────────
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+
+          # ── Keamanan level container ─────────
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+
+          # ── Volume mount untuk temp ──────────
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: tmp
+          emptyDir: {}
+
+---
+# ─────────────────────────────────────────────
+# 5. Service  – ClusterIP (internal)
+# ─────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-service
+  namespace: messaging
+  labels:
+    app: notification-service
+spec:
+  type: ClusterIP
+  selector:
+    app: notification-service
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+
+---
+# ─────────────────────────────────────────────
+# 6. HorizontalPodAutoscaler
+# ─────────────────────────────────────────────
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: notification-service-hpa
+  namespace: messaging
+  labels:
+    app: notification-service
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: notification-service
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+---
+# ─────────────────────────────────────────────
+# 7. PodDisruptionBudget
+#    Pastikan minimal 1 pod tetap running saat
+#    node draining / rolling update
+# ─────────────────────────────────────────────
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: notification-service-pdb
+  namespace: messaging
+  labels:
+    app: notification-service
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: notification-service
+
+---
+# ─────────────────────────────────────────────
+# 8. Ingress  (opsional – aktifkan jika service
+#    perlu diekspos keluar cluster)
+# ─────────────────────────────────────────────
+# apiVersion: networking.k8s.io/v1
+# kind: Ingress
+# metadata:
+#   name: notification-service-ingress
+#   namespace: messaging
+#   annotations:
+#     nginx.ingress.kubernetes.io/rewrite-target: /
+# spec:
+#   rules:
+#     - host: notification-service.internal.id
+#       http:
+#         paths:
+#           - path: /
+#             pathType: Prefix
+#             backend:
+#               service:
+#                 name: notification-service
+#                 port:
+#                   name: http
